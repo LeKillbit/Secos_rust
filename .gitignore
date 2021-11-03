@@ -8,3 +8,7 @@
 *.map
 *.patch
 !.gitignore
+tags
+rust_kernel/kernel_core/target/
+rust_kernel/build/
+rust_kernel/target/
