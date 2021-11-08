@@ -1,3 +1,5 @@
+//! Interface with the CPU and its registers
+
 use crate::segmem::GdtPointer;
 use crate::interrupts::IdtPointer;
 use crate::{PERIPHERALS, println, print};
@@ -159,5 +161,14 @@ pub fn get_esp() -> u32 {
 pub fn set_esp(val : u32) {
     unsafe {
         asm!("mov esp, {}", in(reg) val);
+    }
+}
+
+#[inline]
+pub fn get_cr3() -> u32 {
+    unsafe {
+        let val : u32;
+        asm!("mov {}, cr3", out(reg) val);
+        val
     }
 }

@@ -28,6 +28,8 @@ SECTIONS
    __kernel_end__ = .;
 
    . = 0x400000;
-   .user_stack : { KEEP(*(.user_stack))          } : phstack
-   __user_stack_start__ = .;
+   __base_allocator__ = .;
+   #. = 0x400000;
+   #.user_stack : { KEEP(*(.user_stack))          } : phstack
+   #__user_stack_start__ = .;
 }

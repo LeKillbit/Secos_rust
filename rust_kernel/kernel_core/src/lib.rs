@@ -15,6 +15,7 @@ mod peripherals;
 mod segmem;
 mod interrupts;
 mod tasks;
+mod paging;
 
 use core::panic::PanicInfo;
 
@@ -24,6 +25,8 @@ use crate::multiboot::*;
 use crate::peripherals::Peripherals;
 use crate::segmem::*;
 use crate::interrupts::*;
+//use crate::paging::pagemem::*;
+use crate::paging::*;
 
 #[no_mangle]
 #[link_section=".mbh"]
@@ -97,8 +100,8 @@ pub extern "fastcall" fn rust_main(mbi_ptr : &MultibootInfo) {
     // Init the serial port so we can use the print!() and println!() macros
     serial_init();
     
-    print_kernel_mmap(mbi_ptr);
-    
+    //print_kernel_mmap(mbi_ptr);
+
     // Init the gdt with the following segments
     //  0x00 null
     //  0x08 kernel code segment
@@ -111,18 +114,23 @@ pub extern "fastcall" fn rust_main(mbi_ptr : &MultibootInfo) {
     // Creates an IDT and initialize the idt register
     interrupts_init();
 
-    /*cpu::set_ds(0x20 | 3);
-    cpu::set_es(0x20 | 3);
-    cpu::set_fs(0x20 | 3);
-    cpu::set_gs(0x20 | 3);*/
+    println!("cr3 value : {}", cpu::get_cr3());
+    
+    let pageDirectory = setup_identity_mapping();
+    switch_pgd(pageDirectory);
+    enable_paging();
 
-    //cpu::set_ss(0x20 | 3);
-    //cpu::far_jump::<{0x18 | 3}>(userland);
-    //far_jump!(0x18|3, userland);
+    println!("paging enabled");
 
-    tasks::enter_ring3_task(userland);
+    //let p : *const u32 = 0x400000 as *const u32;
+    //println!("{:#x}", *p);
 
-    println!("after userland task !");
+    //let pde = PageDirectoryEntry::new(0x80000);
+    //println!("pde : {:#x}", pde.0);
+
+    //tasks::enter_ring3_task(userland);
+
+    //println!("after userland task !");
     
     cpu::halt();
 }

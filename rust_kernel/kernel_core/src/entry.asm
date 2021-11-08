@@ -3,8 +3,8 @@
 section .kernel_stack align=16 nobits alloc write
 resb 0x2000
 
-section .user_stack align=16 nobits alloc write
-resb 0x6000
+; section .user_stack align=16 nobits alloc write
+; resb 0x6000
 
 section .text
 

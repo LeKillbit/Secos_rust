@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>>{
                 spawn_qemu(false, true)?;
             }
             _ => {
-                return Err("usage : cargo run {qemu, clean}".into());
+                return Err("usage : cargo run {qemu, kvm, clean}".into());
             }
         }
     }
