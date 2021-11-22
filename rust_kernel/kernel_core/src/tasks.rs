@@ -14,10 +14,10 @@ use crate::{print, println, PERIPHERALS};
 const KERNEL_STACK_SIZE : usize = 1;
 
 /// Size in pages of the user stack for a task
-const USER_STACK_SIZE : usize = 2;
+const USER_STACK_SIZE : usize = 1;
 
 /// Size in pages of the user code for a task
-const USER_CODE_SIZE : usize = 2;
+const USER_CODE_SIZE : usize = 1;
 
 /// Max number of tasks that can run simultaneously on the system
 const MAX_TASKS : usize = 10;
@@ -156,7 +156,6 @@ pub fn switch_to(prev : &Task, next : &Task) {
               mov gs, ax
               mov fs, ax
              ", 
-             in(reg) resume_from_intr as *const u32 as u32,
              in(reg) next.kernel_sp,
              in("edi") &prev.kernel_sp,
              in("ecx") prev.vspace.get_pgd_paddr().0,
@@ -175,6 +174,7 @@ pub fn schedule() {
         } else {
             prev_task = TASKS[CURRENT_TASK_IDX].as_ref().unwrap();
         }
+
         // Find the next task in the task array
         loop {
             CURRENT_TASK_IDX = (CURRENT_TASK_IDX + 1) % MAX_TASKS;
@@ -182,6 +182,7 @@ pub fn schedule() {
                 break;
             }
         }
+
         switch_to(prev_task, TASKS[CURRENT_TASK_IDX].as_ref().unwrap());
     }
 }

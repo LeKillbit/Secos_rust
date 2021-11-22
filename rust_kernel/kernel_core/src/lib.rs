@@ -29,7 +29,7 @@ use crate::segmem::*;
 use crate::interrupts::*;
 use crate::paging::virtmem::*;
 use crate::paging::*;
-use crate::userland_tasks::*;
+//use crate::userland_tasks::*;
 
 #[no_mangle]
 #[link_section=".mbh"]
@@ -131,19 +131,9 @@ pub extern "fastcall" fn rust_main(mbi_ptr : &MultibootInfo) {
     tasks::Task::new(b"first_task", userland_tasks::task1);
     tasks::Task::new(b"second_task", userland_tasks::task2);
 
-    /*for i in (0..core::mem::size_of::<InterruptContext>()).step_by(4) {
-        let val = unsafe {
-            core::ptr::read((task1.kernel_sp + i as u32) as *const u32)
-        };
-        println!("{:#x}", val);
-    }*/
-
-    //pic::enable_hardware_intr();
-    //unsafe { asm!("sti"); }
-
     tasks::schedule();
 
     loop {}
     
-    cpu::halt();
+    //cpu::halt();
 }
