@@ -1,6 +1,9 @@
-use crate::cpu::set_idt;
-use crate::{print, println, PERIPHERALS};
-use crate::tasks::exit_task;
+use crate::cpu::{set_idt, get_cr2, get_ds, get_es, get_fs, get_gs, get_cr3};
+use crate::tasks::schedule;
+use crate::paging::pagemem::*;
+use crate::paging::virtmem::*;
+use crate::syscalls::*;
+use crate::pic::*;
 
 /// Present = 1, Descriptor Privilege Level = Ring 0, Type = 32 Interrupt
 const X86_INTR_GATE : u8 = 0x8e;
@@ -26,40 +29,6 @@ pub struct IdtEntry {
     zero : u8,
     type_attr : u8,
     offset2 : u16,
-}
-
-/// Shape of an interrupt frame in x86 asm
-#[repr(C)]
-pub struct InterruptFrame {
-    pub ip : u32,
-    pub cs : u32,
-    pub eflags : u32,
-    
-    // If the privilege level changes
-    pub sp : u32,
-    pub ss : u32,
-}
-
-/// Stores all register values
-#[repr(C)]
-pub struct Registers {
-    edi : u32,
-    esi : u32,
-    ebp : u32,
-    esp : u32,
-    ebx : u32,
-    edx : u32,
-    ecx : u32,
-    eax : u32,
-}
-
-/// Context of an x86 interrupt
-#[repr(C)]
-pub struct InterruptContext {
-    regs : Registers,
-    pub nr : u32,
-    pub err : u32,
-    frame : InterruptFrame,
 }
 
 impl From<IdtEntry> for u64 {
@@ -106,14 +75,56 @@ impl IdtEntry {
     }
 }
 
-static mut IDT_ENTRIES : [IdtEntry; 256] = [IdtEntry::null(); 256];
+/// Shape of an interrupt frame in x86 asm
+#[repr(C)]
+#[derive(Default, Copy, Clone)]
+pub struct InterruptFrame {
+    pub ip : u32,
+    pub cs : u32,
+    pub eflags : u32,
+    
+    // If the privilege level changes
+    pub sp : u32,
+    pub ss : u32,
+}
 
+/// Stores all register values
+#[repr(C)]
+#[derive(Default, Copy, Clone)]
+pub struct Registers {
+    pub edi : u32,
+    pub esi : u32,
+    pub ebp : u32,
+    pub esp : u32,
+    pub ebx : u32,
+    pub edx : u32,
+    pub ecx : u32,
+    pub eax : u32,
+}
+
+/// Context of an x86 interrupt
+#[repr(C)]
+#[derive(Default, Copy, Clone)]
+pub struct InterruptContext {
+    pub regs : Registers,
+    pub nr : u32,
+    pub err : u32,
+    pub frame : InterruptFrame,
+}
+
+static mut IDT_ENTRIES : [IdtEntry; 256] = [IdtEntry::null(); 256];
 
 /// Rust function called to handle an interrupt
 #[no_mangle]
-pub unsafe extern "fastcall" fn interrupt_handler(ctx : &InterruptContext) {
+pub unsafe extern "fastcall" fn interrupt_handler(ctx : &mut InterruptContext) {
     let mut handled = true;
     match ctx.nr {
+        // Double fault
+        0x8 => handle_double_fault(ctx),
+        // Page fault
+        0xe => handle_page_fault(ctx),
+        // Hardware timer interrupt
+        0x20 => handle_timer_intr(ctx),
         // Int 0x80 : syscall
         0x80 => handle_syscall(ctx),
         _ => handled = false,
@@ -128,29 +139,44 @@ fn interrupt_panic(ctx : &InterruptContext) {
     panic!(r#"
 Interrupt {}, error code {:#x}
 Registers state:
-    eax {:#08x} ecx {:#08x} edx {:#08x} ebx {:#08x}
-    esp {:#08x} ebp {:#08x} esi {:#08x} edi {:#08x}
+    eax {:#010x} ecx {:#010x} edx {:#010x} ebx {:#010x}
+    esp {:#010x} ebp {:#010x} esi {:#010x} edi {:#010x}
     
-    cs:eip {:#x}:{:#08x}
-    ss:esp {:#x}:{:#08x}
+    cs:eip {:#04x}:{:#010x}
+    ss:esp {:#04x}:{:#010x}
     eflags {:#x}
+    ds     {:#x}
+    es     {:#x}
+    fs     {:#x}
+    gs     {:#x}
+    cr3    {:#x}
 "#, 
     ctx.nr, ctx.err, ctx.regs.eax, ctx.regs.ecx, ctx.regs.edx, 
     ctx.regs.ebx, ctx.regs.esp, ctx.regs.ebp, ctx.regs.esi, 
     ctx.regs.edi, ctx.frame.cs, ctx.frame.ip, ctx.frame.ss, 
-    ctx.frame.sp, ctx.frame.eflags
+    ctx.frame.sp, ctx.frame.eflags, get_ds(), get_es(), get_fs(), get_gs(),
+    get_cr3().0
     );
 }
 
-fn handle_syscall(ctx : &InterruptContext) {
-    match ctx.regs.eax {
-        // Exit syscall
-        1 => {
-            println!("exit syscall !");       
-            exit_task();
-        },
-        _ => panic!("Unimplemented syscall : {:#x}", ctx.regs.eax),
-    }
+/// Handle the clock interrupt
+fn handle_timer_intr(ctx : &InterruptContext) {
+    Pic::notify_eoi(0);
+    schedule();
+}
+
+/// Handle double fault
+fn handle_double_fault(ctx : &InterruptContext) {
+    panic!("double fault !");
+}
+
+/// Page fault handler
+fn handle_page_fault(ctx : &InterruptContext) {
+    let faulting_addr = VirtAddr(get_cr2());
+    
+    let vspace = VirtMem::get_current();
+
+    panic!("Page fault @{:#x}", faulting_addr.0);
 }
 
 /// Create and load an IDT
@@ -166,6 +192,8 @@ pub fn interrupts_init() {
         }
     }
 
+    // Allow the 128th interrupt to be fired from userland since it is 
+    // used to make a syscall
     unsafe {
         IDT_ENTRIES[128].type_attr = X86_INTR_GATE_R3;
     }
@@ -529,6 +557,7 @@ extern {
 	fn vec_interrupt_253();
 	fn vec_interrupt_254();
 	fn vec_interrupt_255();
+    pub fn resume_from_intr();
 }
 
 global_asm!(r#"
@@ -544,10 +573,14 @@ vec_interrupt_\int_id:
     pusha           // save gprs
     mov ecx, esp    // set ecx to the @ of the interrupt_context structure
     call interrupt_handler
-    popa            // restore gprs
-    add esp, 8      // pop interrupt number
-    iretd
+    jmp resume_from_intr
 .endm
+
+.global resume_from_intr
+resume_from_intr:
+    popa            // restore gprs
+    add esp, 8      // pop interrupt number and error code
+    iretd
 
 define_int_handler 0, 0
 define_int_handler 1, 0

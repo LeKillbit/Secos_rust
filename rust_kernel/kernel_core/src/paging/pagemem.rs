@@ -2,7 +2,6 @@
 
 use super::physmem::*;
 use core::mem::size_of;
-use crate::{print, println, PERIPHERALS};
 
 pub const PAGE_SIZE : usize = 0x1000;
 
@@ -39,6 +38,19 @@ pub struct VirtAddr(pub u32);
 /// A strongly typed Physical Address
 #[derive(Debug, Copy, Clone)]
 pub struct PhysAddr(pub u32);
+
+/// State of a page table mapping
+#[derive(Debug)]
+pub struct Mapping {
+    /// Physical address of the page directory entry for this mapping
+    pub pde : Option<PhysAddr>,
+
+    /// Physical address of the page table entry for this mapping
+    pub pte : Option<PhysAddr>,
+
+    /// Base address of the physical page backing the virtual memory
+    pub page : Option<PhysAddr>,
+}
 
 /// A Page Directory Entry
 pub struct PageDirectoryEntry(pub u32);
@@ -159,6 +171,7 @@ impl PageTableEntry {
 }
 
 /// A Page Directory
+#[derive(Debug)]
 pub struct PageDirectory {
     table : PhysAddr,
 }
@@ -169,6 +182,13 @@ impl PageDirectory {
         let page = unsafe { PhysMem::alloc_phys_zeroed() };
         Self {
             table : page,
+        }
+    }
+    
+    /// Create a `PageDirectory` from a physical address
+    pub fn from_paddr(paddr : PhysAddr) -> Self {
+        Self {
+            table : paddr,
         }
     }
 
@@ -193,25 +213,47 @@ impl PageDirectory {
         entry
     }
 
+    /// Create a page table entry at `vaddr` of length `size` bytes
+    pub fn map(&self, vaddr : VirtAddr, size : usize, write : bool, 
+                      user : bool) {
+        
+        let end_vaddr = vaddr.0 + (size as u32);
+
+        // Iterate over all pages in the mapping 
+        for vaddr in (vaddr.0..end_vaddr).step_by(PAGE_SIZE) {
+            // Alloc a new physical page
+            let page = unsafe { PhysMem::alloc_phys() };
+            // Create a ptb entry corresponding to the allocated page
+            let new_ptb_entry = PageTableEntry::new(
+                page.0 | PAGE_PRESENT |
+                if write { PAGE_WRITE } else { 0 } |
+                if user { PAGE_USER } else { 0 }
+            );
+            // Add this mapping to the page table 
+            unsafe {
+                self.map_raw(VirtAddr(vaddr), new_ptb_entry.0);
+            }
+        }
+    }
+
     /// Map a `vaddr` to a raw page table entry `raw`
     pub unsafe fn map_raw(&self, vaddr : VirtAddr, raw : u32) {
-        //println!("Mapping vaddr {:#x} at paddr {:#x}", vaddr.0, 
-        //         PageDirectoryEntry::new(raw).get_paddr().0);
         let pgd_index = ((vaddr.0 >> 22) & 0x3ff) as usize;
         let ptb_index = ((vaddr.0 >> 12) & 0x3ff) as usize;
 
-        let entry = self.get_entry(pgd_index);
+        let mut entry = self.get_entry(pgd_index);
 
         // If the entry is not present, allocate a blank page table and update
         // the corresponding PDE
         if entry.0 & PAGE_PRESENT == 0 {
             let new_ptb = PhysMem::alloc_phys_zeroed();
-            //println!("allocating new page table at {:#x}", new_ptb.0);
+            //println!("allocating new pt at {:#x}", new_ptb.0);
 
             let new_pgd_entry = PageDirectoryEntry::new(
-                new_ptb.0 | PAGE_PRESENT | PAGE_WRITE); 
+                new_ptb.0 | PAGE_PRESENT | PAGE_WRITE | PAGE_USER); 
 
             self.set_entry(pgd_index, new_pgd_entry.0);
+            entry = new_pgd_entry;
         }
         
         // Get the page table from the entry paddr
@@ -221,8 +263,38 @@ impl PageDirectory {
         ptb.set_entry(ptb_index, raw);
     }
 
+    /// Return the physical address of this page table directory
     pub fn get_paddr(&self) -> PhysAddr {
         self.table
+    }
+
+    /// Translate a `vaddr` into its mapping components in the `self` page
+    /// directory
+    pub fn translate(&self, vaddr : VirtAddr) -> Mapping {
+        let mut ret = Mapping {
+            pde :  None,
+            pte :  None,
+            page : None,
+        };
+
+        // Compute pde / pte indicies
+        let pde_index = ((vaddr.0 >> 22) & 0x3ff) as usize;
+        let pte_index = ((vaddr.0 >> 12) & 0x3ff) as usize;
+        
+        ret.pde = Some(PhysAddr(self.table.0 + 
+                                (pde_index * size_of::<u32>()) as u32));
+
+        // Get the pde
+        let pde = self.get_entry(pde_index);
+        ret.pte = Some(pde.get_paddr());
+
+        let ptb = PageTable::from_paddr(pde.get_paddr());
+
+        // Get the pte
+        let pte = ptb.get_entry(pte_index);
+        ret.page = Some(pte.get_paddr());
+        
+        ret
     }
 }
 
@@ -248,51 +320,15 @@ impl PageTable {
             core::ptr::write(entry_vaddr as *mut u32, entry);
         }
     }
-}
-
-
-
-/*pub struct PageDirectory<'a> {
-    pub entries : &'a mut [PageDirectoryEntry],
-}
-
-impl<'a> PageDirectory<'a> {
-    pub unsafe fn new() -> Self {
-        let page = alloc_page();
-        let mut entries = core::slice::from_raw_parts_mut(
-            page.0 as *const PageDirectoryEntry as *mut _, 
-            1024);
-        Self {
-            entries : entries,
-        }
+    
+    /// Get the PTE at `index`
+    fn get_entry(&self, index : usize) -> PageTableEntry {
+        let entry_paddr = PhysAddr(self.table.0 + 
+                                   (index * size_of::<u32>()) as u32);
+        let entry_vaddr = PhysMem::translate(entry_paddr, size_of::<u32>());
+        let entry = unsafe {
+            PageTableEntry::new(core::ptr::read(entry_vaddr as *const u32))
+        };
+        entry
     }
-
-    /// Map a `vaddr` to a raw page table entry `raw`
-    pub unsafe fn map_raw(&mut self, vaddr : VirtAddr, raw : u32) {
-        let pgd_index = ((vaddr.0 >> 22) & 0x3ff) as usize;
-        let pgt_index = ((vaddr.0 >> 12) & 0x3ff) as usize;
-
-        if self.entries[pgd_index].0 == 0 {
-            let ptb = PageTable::new();
-            //self.entries = PageTable::new();
-        }
-    }
-}*/
-
-/*
-/// A Page Table
-pub struct PageTable<'a> {
-    pub entries : &'a mut [PageTableEntry],
 }
-
-impl<'a> PageTable<'a> {
-    pub unsafe fn new() -> Self {
-        let page = PhysMem::alloc_phys();
-        let mut entries = core::slice::from_raw_parts_mut(
-            page.0 as *const PageTableEntry as *mut _, 
-            1024);
-        Self {
-            entries : entries,
-        }
-    }
-}*/

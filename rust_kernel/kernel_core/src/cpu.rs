@@ -3,6 +3,7 @@
 use crate::segmem::GdtPointer;
 use crate::interrupts::IdtPointer;
 use crate::{PERIPHERALS, println, print};
+use crate::paging::pagemem::PhysAddr;
 
 #[inline]
 pub unsafe fn out8(addr : u16, val : u8) {
@@ -99,6 +100,33 @@ pub fn get_ds() -> u16 {
 }
 
 #[inline]
+pub fn get_es() -> u16 {
+    unsafe {
+        let val : u16;
+        asm!("mov {}, es", out(reg) val);
+        val
+    }
+}
+
+#[inline]
+pub fn get_fs() -> u16 {
+    unsafe {
+        let val : u16;
+        asm!("mov {}, fs", out(reg) val);
+        val
+    }
+}
+
+#[inline]
+pub fn get_gs() -> u16 {
+    unsafe {
+        let val : u16;
+        asm!("mov {}, gs", out(reg) val);
+        val
+    }
+}
+
+#[inline]
 pub fn set_es(es : u16) {
     unsafe {
         asm!("mov es, {}", in(reg) es);
@@ -165,10 +193,19 @@ pub fn set_esp(val : u32) {
 }
 
 #[inline]
-pub fn get_cr3() -> u32 {
+pub fn get_cr3() -> PhysAddr {
     unsafe {
         let val : u32;
         asm!("mov {}, cr3", out(reg) val);
+        PhysAddr(val)
+    }
+}
+
+#[inline]
+pub fn get_cr2() -> u32 {
+    unsafe {
+        let val : u32;
+        asm!("mov {}, cr2", out(reg) val);
         val
     }
 }

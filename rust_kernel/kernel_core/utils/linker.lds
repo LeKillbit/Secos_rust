@@ -24,12 +24,13 @@ SECTIONS
    .data     : { *(.data)                        } : phsetup
    .bss      : { *(.bss COMMON)                  } : phsetup
    /DISCARD/ : { *(.note* .indent .comment)      } : phsetup
+   .user_task ALIGN(0x1000) : 
+   { 
+        KEEP(*(.user_task)) . = ALIGN(0x1000); 
+   } : phsetup
 
    __kernel_end__ = .;
 
    . = 0x400000;
    __base_allocator__ = .;
-   #. = 0x400000;
-   #.user_stack : { KEEP(*(.user_stack))          } : phstack
-   #__user_stack_start__ = .;
 }

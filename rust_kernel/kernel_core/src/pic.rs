@@ -18,35 +18,58 @@ const ICW4_BUF_SLAVE : u8 = 0x08;      /* Buffered mode/slave */
 const ICW4_BUF_MASTER : u8 = 0x0C;     /* Buffered mode/master */
 const ICW4_SFNM : u8 = 0x10;           /* Special fully nested (not) */
 
-/// Remap the Programmable Interrupt Controllers to specified 
-/// vector offsets : `offset1` for master PIC and `offset2` for slave PIC
-pub fn pic_remap(offset1 : u8, offset2 : u8) {
-    unsafe {
-        // First init word (ICW1) : init the two PICS
-        //      - ICW4 needed
-        //      - cascade mode
-        cpu::out8(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
-        cpu::out8(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+const EOI_COMMAND : u8 = 0x20;
 
-        // Second init word (ICW2) : Vector offset for the PICS
-        //      - remap IRQ[00-07] to IDT[offset1-offset1+7]
-        //      - remap IRQ[08-15] to IDT[offset2-offset2+7] 
-        cpu::out8(PIC1_DATA, offset1);
-        cpu::out8(PIC2_DATA, offset2);
+/// Empty struct representing the PIC
+pub struct Pic;
 
-        // Third init word (ICW3) : Master / Slave wiring
-        //      - tell master PIC that there is a slave at IRQ2
-        //      - tell slave PIC its cascade identity
-        cpu::out8(PIC1_DATA, 4);
-        cpu::out8(PIC2_DATA, 2);
+impl Pic {
+    /// Remap the Programmable Interrupt Controllers to specified 
+    /// vector offsets : `offset1` for master PIC and `offset2` for slave PIC
+    pub fn remap(offset1 : u8, offset2 : u8) {
+        unsafe {
 
-        // Fourth init word (ICW4) : Environment Info
-        //      - x86 mode
-        //      - normal EOI
-        //      - not buffered
-        //      - not fully nested
-        cpu::out8(PIC1_DATA, ICW4_8086);
-        cpu::out8(PIC2_DATA, ICW4_8086);
+            // Save masks
+            let a1 = cpu::in8(PIC1_DATA);
+            let a2 = cpu::in8(PIC2_DATA);
+
+            // First init word (ICW1) : init the two PICS
+            //      - ICW4 needed
+            //      - cascade mode
+            cpu::out8(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
+            cpu::out8(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+
+            // Second init word (ICW2) : Vector offset for the PICS
+            //      - remap IRQ[00-07] to IDT[offset1-offset1+7]
+            //      - remap IRQ[08-15] to IDT[offset2-offset2+7] 
+            cpu::out8(PIC1_DATA, offset1);
+            cpu::out8(PIC2_DATA, offset2);
+
+            // Third init word (ICW3) : Master / Slave wiring
+            //      - tell master PIC that there is a slave at IRQ2
+            //      - tell slave PIC its cascade identity
+            cpu::out8(PIC1_DATA, 4);
+            cpu::out8(PIC2_DATA, 2);
+
+            // Fourth init word (ICW4) : Environment Info
+            //      - x86 mode
+            //      - normal EOI
+            //      - not buffered
+            //      - not fully nested
+            cpu::out8(PIC1_DATA, ICW4_8086);
+            cpu::out8(PIC2_DATA, ICW4_8086);
+            
+            // Restore masks
+            cpu::out8(PIC1_DATA, a1);
+            cpu::out8(PIC2_DATA, a2);
+        }
+    }
+
+    /// Notify the end of an interrupt to the PIC
+    pub fn notify_eoi(irq : u32) {
+        if irq >= 8 {
+            unsafe { cpu::out8(PIC2_COMMAND, EOI_COMMAND); }
+        }
+        unsafe { cpu::out8(PIC1_COMMAND, EOI_COMMAND); }
     }
 }
-

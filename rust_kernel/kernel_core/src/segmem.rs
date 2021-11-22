@@ -29,8 +29,8 @@ pub static mut TSS : TssEntry = TssEntry::default();
 #[repr(C)]
 pub struct TssEntry {
     pub prev_tss : u32, // Used in hardware-based context switch
-    pub esp0 : u32,     // Stack pointer to load when changing to kernel mode
-    pub ss0 : u32,      // Stack segment to load when changing to kernel mode
+    pub esp0 : u32,     // Stack pointer to load when switching to kernel mode
+    pub ss0 : u32,      // Stack segment to load when switching to kernel mode
     // Unused from here
     esp1 : u32,
     ss1 : u32,
@@ -89,6 +89,11 @@ impl TssEntry {
             trap : 0,
             iomap_base : 0,
         }
+    }
+
+    /// Update the esp0 field 
+    pub fn update_esp0(&mut self, esp : u32) {
+        self.esp0 = esp;
     }
 }
 

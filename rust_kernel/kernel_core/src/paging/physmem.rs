@@ -1,7 +1,7 @@
 //! Interactions with physical memory
 //! Bitmap-based physical page allocator
 
-use super::pagemem::{PhysAddr, VirtAddr, PAGE_SIZE};
+use super::pagemem::{PhysAddr, PAGE_SIZE};
 use super::*;
 
 /// Size calculation : (0x7fe0000 - 0x400000) / 4096
@@ -10,9 +10,6 @@ const BITMAP_SIZE : usize = 0x7be0;
 
 /// A 0 represent a free page, a 1 represent a used page
 static mut ALLOCATOR_BITMAP : [u8; BITMAP_SIZE] = [0; BITMAP_SIZE];
-
-/// The base address of the allocator area
-const BASE_ALLOCATOR : usize = 0x400_000;
 
 /// Empty struct representing physical memory
 pub struct PhysMem;
@@ -24,7 +21,7 @@ impl PhysMem {
         for (i, &page) in ALLOCATOR_BITMAP.iter().enumerate() {
             if page == 0 {
                 ALLOCATOR_BITMAP[i] = 1;
-                return PhysAddr((BASE_ALLOCATOR + i * PAGE_SIZE) as u32);
+                return PhysAddr((PHYS_ALLOCATOR_BASE + i * PAGE_SIZE) as u32);
             }
         }
         panic!("Out of memory");
@@ -43,8 +40,8 @@ impl PhysMem {
             panic!("Freeing non-aligned address : {:#x}", addr.0);
         }
 
-        let index = ((addr.0 - BASE_ALLOCATOR as u32) >> 12) as usize;
-        if index > BITMAP_SIZE || addr.0 < BASE_ALLOCATOR as u32 {
+        let index = ((addr.0 - PHYS_ALLOCATOR_BASE as u32) >> 12) as usize;
+        if index > BITMAP_SIZE || addr.0 < PHYS_ALLOCATOR_BASE as u32 {
             panic!("Freeing a page outside the bounds of the allocator : {:#x}",
                    addr.0); 
         }

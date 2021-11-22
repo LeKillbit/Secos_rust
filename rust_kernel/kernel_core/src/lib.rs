@@ -1,10 +1,10 @@
 #![no_std]
 #![feature(asm)]
 #![feature(global_asm)]
-//#![allow(non_upper_case_globals)]
-//#![allow(non_camel_case_types)]
-//#![allow(non_snake_case)]
-//#![allow(dead_code)]
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(dead_code)]
 
 mod pic;
 mod cpu;
@@ -16,6 +16,8 @@ mod segmem;
 mod interrupts;
 mod tasks;
 mod paging;
+mod userland_tasks;
+mod syscalls;
 
 use core::panic::PanicInfo;
 
@@ -25,8 +27,9 @@ use crate::multiboot::*;
 use crate::peripherals::Peripherals;
 use crate::segmem::*;
 use crate::interrupts::*;
-//use crate::paging::pagemem::*;
+use crate::paging::virtmem::*;
 use crate::paging::*;
+use crate::userland_tasks::*;
 
 #[no_mangle]
 #[link_section=".mbh"]
@@ -94,9 +97,6 @@ fn userland() {
 #[no_mangle]
 pub extern "fastcall" fn rust_main(mbi_ptr : &MultibootInfo) {
 
-    // Remap IRQ[00-07] to IDT[0x20-0x27] and IRQ[08-15] to IDT[0x28-0x2f]
-    pic_remap(0x20, 0x28);
-
     // Init the serial port so we can use the print!() and println!() macros
     serial_init();
     
@@ -114,23 +114,36 @@ pub extern "fastcall" fn rust_main(mbi_ptr : &MultibootInfo) {
     // Creates an IDT and initialize the idt register
     interrupts_init();
 
-    println!("cr3 value : {}", cpu::get_cr3());
-    
-    let pageDirectory = setup_identity_mapping();
-    switch_pgd(pageDirectory);
+    // Remap IRQ[00-07] to IDT[0x20-0x27] and IRQ[08-15] to IDT[0x28-0x2f]
+    Pic::remap(0x20, 0x28);
+
+    // Create the kernel page directory, setup to identity map physical memory
+    // for the first 128 MB
+    let mut kernel_vspace = VirtMem::new();
+    setup_identity_mapping(&kernel_vspace);
+
+    // Set the cr3 register to use the previously created page directory
+    switch_vspace(&kernel_vspace);
+
+    // Enable paging
     enable_paging();
 
-    println!("paging enabled");
+    tasks::Task::new(b"first_task", userland_tasks::task1);
+    tasks::Task::new(b"second_task", userland_tasks::task2);
 
-    //let p : *const u32 = 0x400000 as *const u32;
-    //println!("{:#x}", *p);
+    /*for i in (0..core::mem::size_of::<InterruptContext>()).step_by(4) {
+        let val = unsafe {
+            core::ptr::read((task1.kernel_sp + i as u32) as *const u32)
+        };
+        println!("{:#x}", val);
+    }*/
 
-    //let pde = PageDirectoryEntry::new(0x80000);
-    //println!("pde : {:#x}", pde.0);
+    //pic::enable_hardware_intr();
+    //unsafe { asm!("sti"); }
 
-    //tasks::enter_ring3_task(userland);
+    tasks::schedule();
 
-    //println!("after userland task !");
+    loop {}
     
     cpu::halt();
 }
