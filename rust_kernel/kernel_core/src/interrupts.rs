@@ -1,3 +1,4 @@
+use core::arch::global_asm;
 use crate::cpu::{set_idt, get_cr2, get_ds, get_es, get_fs, get_gs, get_cr3};
 use crate::tasks::schedule;
 use crate::paging::pagemem::*;

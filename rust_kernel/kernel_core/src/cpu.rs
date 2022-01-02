@@ -4,6 +4,7 @@ use crate::segmem::GdtPointer;
 use crate::interrupts::IdtPointer;
 use crate::{PERIPHERALS, println, print};
 use crate::paging::pagemem::PhysAddr;
+use core::arch::asm;
 
 #[inline]
 pub unsafe fn out8(addr : u16, val : u8) {

@@ -13,4 +13,6 @@ To clean generated files, run `cargo run clean`.
 * `kernel_core/src/*` : code of the kernel
 * `kernel_core/utils/linker.lds` : linker script, comes from the original secos
 
+## Notes
 
+Rust version : latest nightly (1.59 nightly at that time)

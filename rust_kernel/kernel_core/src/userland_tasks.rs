@@ -1,16 +1,18 @@
+use core::arch::asm;
+
 #[no_mangle]
 #[link_section=".user_task"]
 pub fn task1() {
     mmap_shared(0x1000_0000, 0);
     print("hello from userland task1!\n");
-    let mut ctr = 0;
+    let mut ctr : u32 = 0;
     loop {
         ctr += 1;
         unsafe { 
-            core::ptr::write(0x1000_0000 as *mut u32, ctr); 
+            core::ptr::write_volatile(0x1000_0000 as *mut u32, ctr); 
         }
-        print("task 1 : ");
-        print_number(ctr);
+        //print("task 1 : ");
+        //print_number(tmp);
     }
 }
 
@@ -19,12 +21,16 @@ pub fn task1() {
 pub fn task2() {
     mmap_shared(0x2000_0000, 0);
     print("hello from userland task2!\n");
+    let mut num : u32 = 0;
     loop {
-        let num = unsafe {
-            core::ptr::read(0x2000_0000 as *const u32)
+        let tmp : u32 = unsafe {
+            core::ptr::read_volatile(0x2000_0000 as *const u32)
         };
-        print("task 2 : ");
-        print_number(num);
+        if tmp != num {
+            num = tmp;
+            print("task 2 : ");
+            print_number(num);
+        }
     }
 }
 

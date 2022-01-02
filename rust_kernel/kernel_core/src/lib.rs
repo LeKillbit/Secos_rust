@@ -1,9 +1,8 @@
 #![no_std]
-#![feature(asm)]
-#![feature(global_asm)]
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![feature(asm_const)]
 #![allow(dead_code)]
 
 mod pic;
@@ -20,6 +19,7 @@ mod userland_tasks;
 mod syscalls;
 
 use core::panic::PanicInfo;
+use core::arch::asm;
 
 use crate::pic::*;
 use crate::serial::*;
@@ -77,17 +77,6 @@ fn print_kernel_mmap(info : &MultibootInfo) {
     for entry in &memory_map[..entries] {
         println!("{:<#10x} - {:<#11x} ({})", 
                  entry.addr, entry.addr + entry.len, entry.ty);
-    }
-}
-
-fn userland() {
-    unsafe {
-        asm!("push 1
-              push 2
-              push 3
-              mov eax, 1
-              int 0x80
-        ");
     }
 }
 

@@ -8,6 +8,7 @@ use crate::paging::pagemem::*;
 use crate::interrupts::InterruptContext;
 use crate::interrupts::resume_from_intr;
 use core::mem::size_of;
+use core::arch::asm;
 use crate::{print, println, PERIPHERALS};
 
 /// Size in pages of the kernel stack for a task
@@ -135,7 +136,8 @@ impl Task {
 pub fn switch_to(prev : &Task, next : &Task) {
     unsafe { 
         // Update the esp0 field of the TSS
-        TSS.update_esp0(next.kernel_sp);
+        TSS.update_esp0(next.kernel_sp + 20 + 
+                        size_of::<InterruptContext>() as u32);
     
         asm!("mov eax, ds    // Save data segment registers on kernel stack
               push eax

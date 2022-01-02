@@ -4,6 +4,7 @@ pub mod virtmem;
 
 use pagemem::*;
 use virtmem::*;
+use core::arch::asm;
 
 /// The virtual base in the kernel page table where physical memory is 
 /// linearly mapped. If set to 0, virtual memory is identity mapped to
